@@ -16,6 +16,7 @@ METRICS_DIR = 'data/metrics'
 # PS dont increase this batch size unless you have enough VRAM on your DGPU it as is melts my 3070ti mobile lol
 BATCH_SIZE = 32
 NUM_CLASSES = 4
+# Ideally dont go less than 20 epochs as it just starts to converge in my observation around 15-17th epoch
 EPOCHS = 30
 PATIENCE = 5
 KFOLDS = 5
