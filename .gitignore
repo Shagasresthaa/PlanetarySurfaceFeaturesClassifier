@@ -172,5 +172,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Please Dont commit the model files or datasets to repo except final model files. Try not to blow up the github billing we went through destroying 3 repos already for it and no github LFS please it is a pain
 data/
 *.jpg
+*.pth

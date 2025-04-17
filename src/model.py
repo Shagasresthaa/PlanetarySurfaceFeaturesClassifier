@@ -3,63 +3,60 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, f1_score
 from sklearn.model_selection import KFold
-import numpy as np
 import pandas as pd
 from datetime import datetime
-from astro_resnet_50 import AstroResNet50
+from torch.optim.lr_scheduler import OneCycleLR
+from astro_net import AstroNet
 
 DATA_DIR = 'data/finalDataset'
-BATCH_SIZE = 32
-IMAGE_SIZE = 224
-NUM_CLASSES = 4
-EPOCHS = 20
-PATIENCE = 10
-KFOLDS = 5
+MODELS_DIR = 'models'
 METRICS_DIR = 'data/metrics'
+# PS dont increase this batch size unless you have enough VRAM on your DGPU it as is melts my 3070ti mobile lol
+BATCH_SIZE = 32
+NUM_CLASSES = 4
+EPOCHS = 30
+PATIENCE = 5
+KFOLDS = 5
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# FYI set this to cpu if you dont have DGPU on your lappy
+#device = torch.device("cpu")
+device = torch.device("cuda")
 
-transform = transforms.Compose([
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.5]*3, [0.5]*3)
-])
+# Apply image transforms enhancements for better model convergence
+transform = transforms.Compose([ transforms.RandomResizedCrop(224, scale=(0.8, 1.0)), transforms.RandomHorizontalFlip(), transforms.ColorJitter(0.2, 0.2, 0.2, 0.1), transforms.ToTensor(), transforms.RandomErasing(p=0.3, scale=(0.02, 0.2)), transforms.Normalize([0.5]*3, [0.5]*3)])
 
+# load and prep dataset from the final dataset folder
 dataset = datasets.ImageFolder(DATA_DIR, transform=transform)
 class_names = dataset.classes
 
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-os.makedirs(METRICS_DIR, exist_ok=True)
 csv_path = os.path.join(METRICS_DIR, f'{timestamp}_metrics.csv')
+kf = KFold(n_splits=KFOLDS, shuffle=True, random_state=42)
 
 fold_results = []
 
-kf = KFold(n_splits=KFOLDS, shuffle=True, random_state=42)
+for fold, (train_idx, val_idx) in enumerate(kf.split(dataset), start=1):
+    print(f"\n[Fold {fold}/{KFOLDS}]")
+    train_ds = Subset(dataset, train_idx)
+    val_ds   = Subset(dataset, val_idx)
 
-for fold, (train_idx, val_idx) in enumerate(kf.split(dataset)):
-    print(f"\n[Fold {fold+1}/{KFOLDS}]")
-    train_subset = Subset(dataset, train_idx)
-    val_subset = Subset(dataset, val_idx)
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False)
 
-    train_loader = DataLoader(train_subset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_subset, batch_size=BATCH_SIZE)
+    model = AstroNet(num_classes=NUM_CLASSES).to(device)
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    scheduler = OneCycleLR(optimizer, max_lr=1e-3, steps_per_epoch=len(train_loader), epochs=EPOCHS, pct_start=0.3, anneal_strategy='cos')
 
-    model = AstroResNet50(num_classes=NUM_CLASSES).to(device)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-
-    best_val_loss = float('inf')
+    best_val_f1 = 0.0
     patience_counter = 0
-    train_acc_history, val_acc_history = [], []
+    train_acc_hist, val_acc_hist, val_f1_hist = [], [], []
 
-    for epoch in range(EPOCHS):
+    for epoch in range(1, EPOCHS+1):
         model.train()
-        correct = 0
-        total = 0
-        train_loss = 0
-
+        correct = total = 0
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -67,61 +64,66 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(dataset)):
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-            train_loss += loss.item()
-            preds = torch.argmax(outputs, dim=1)
-            correct += (preds == labels).sum().item()
-            total += labels.size(0)
+            scheduler.step()
 
-        train_acc = correct / total
-        train_acc_history.append(train_acc)
+            preds = outputs.argmax(dim=1)
+            correct += (preds == labels).sum().item()
+            total   += labels.size(0)
+
+        train_acc = correct/total
+        train_acc_hist.append(train_acc)
 
         model.eval()
-        val_correct = 0
-        val_total = 0
+        val_correct = val_total = 0
         val_preds, val_targets = [], []
-        val_loss = 0
 
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
                 outputs = model(images)
-                loss = criterion(outputs, labels)
-                val_loss += loss.item()
-                preds = torch.argmax(outputs, dim=1)
-                val_preds.extend(preds.cpu().numpy())
-                val_targets.extend(labels.cpu().numpy())
+                preds = outputs.argmax(dim=1)
+
                 val_correct += (preds == labels).sum().item()
                 val_total += labels.size(0)
+                val_preds.extend(preds.cpu().tolist())
+                val_targets.extend(labels.cpu().tolist())
 
-        val_acc = val_correct / val_total
-        val_acc_history.append(val_acc)
+        val_acc = val_correct/val_total
+        val_f1  = f1_score(val_targets, val_preds, average='macro')
+        val_acc_hist.append(val_acc)
+        val_f1_hist.append(val_f1)
 
-        print(f"Epoch {epoch+1:03d}: Train Acc={train_acc:.4f} | Val Acc={val_acc:.4f}")
+        print(f"Epoch {epoch:02d}: Train Acc={train_acc:.4f} | Val Acc={val_acc:.4f} | Val F1={val_f1:.4f}")
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        # Early stop and save model if needed (PS dont torture the gpu or cpu anymore than it needs to lol)
+        if val_f1 > best_val_f1:
+            best_val_f1 = val_f1
             patience_counter = 0
+            model_path = os.path.join(MODELS_DIR, f"{timestamp}_fold{fold}.pth")
+            torch.save(model.state_dict(), model_path)
+            print(f"Saved best model for fold {fold} (Val F1={val_f1:.4f}) to {model_path}")
         else:
             patience_counter += 1
             if patience_counter >= PATIENCE:
-                print(f"Early stopping triggered at epoch {epoch+1}")
+                print(f"Early stopping at epoch {epoch}")
                 break
 
-    print("\nClassification Report:\n")
+    # Print out best model classification report
+    print("\nClassification Report:")
     print(classification_report(val_targets, val_preds, target_names=class_names, digits=4))
-    print("Confusion Matrix:\n")
+    print("Confusion Matrix:")
     print(confusion_matrix(val_targets, val_preds))
 
-    fold_df = pd.DataFrame({
-        'epoch': list(range(1, len(train_acc_history) + 1)),
-        f'train_acc_fold{fold+1}': train_acc_history,
-        f'val_acc_fold{fold+1}': val_acc_history
-    })
-    fold_results.append(fold_df)
+    fold_results.append(pd.DataFrame({
+        'epoch': list(range(1, len(train_acc_hist)+1)),
+        f'train_acc_fold{fold}': train_acc_hist,
+        f'val_acc_fold{fold}':   val_acc_hist,
+        f'val_f1_fold{fold}':    val_f1_hist
+    }))
 
-merged_df = fold_results[0]
+# Save all stats for plotting 
+merged = fold_results[0]
 for df in fold_results[1:]:
-    merged_df = pd.merge(merged_df, df, on='epoch', how='outer')
-
-merged_df.to_csv(csv_path, index=False)
-print(f"\n[✔] Saved metrics to {csv_path}")
+    merged = merged.merge(df, on='epoch', how='outer')
+merged.to_csv(csv_path, index=False)
+print(f"\nSaved all folds’ metrics to {csv_path}")
