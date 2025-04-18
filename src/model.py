@@ -17,16 +17,17 @@ METRICS_DIR = 'data/metrics'
 BATCH_SIZE = 32
 NUM_CLASSES = 4
 # Ideally dont go less than 20 epochs as it just starts to converge in my observation around 15-17th epoch
-EPOCHS = 30
-PATIENCE = 5
+EPOCHS = 50
+# 4/18: Increase 5 -> 7 to see if allowing it to overfit for a bit more time could later result in better model per past behaviour
+PATIENCE = 7
 KFOLDS = 5
 
 # FYI set this to cpu if you dont have DGPU on your lappy
-#device = torch.device("cpu")
+# device = torch.device("cpu")
 device = torch.device("cuda")
 
 # Apply image transforms enhancements for better model convergence
-transform = transforms.Compose([ transforms.RandomResizedCrop(224, scale=(0.8, 1.0)), transforms.RandomHorizontalFlip(), transforms.ColorJitter(0.2, 0.2, 0.2, 0.1), transforms.ToTensor(), transforms.RandomErasing(p=0.3, scale=(0.02, 0.2)), transforms.Normalize([0.5]*3, [0.5]*3)])
+transform = transforms.Compose([transforms.RandomResizedCrop(224, scale=(0.8, 1.0)), transforms.RandomHorizontalFlip(), transforms.ColorJitter(0.2, 0.2, 0.2, 0.1), transforms.ToTensor(), transforms.RandomErasing(p=0.3, scale=(0.02, 0.2)), transforms.Normalize([0.5]*3, [0.5]*3)])
 
 # load and prep dataset from the final dataset folder
 dataset = datasets.ImageFolder(DATA_DIR, transform=transform)
@@ -41,21 +42,22 @@ fold_results = []
 for fold, (train_idx, val_idx) in enumerate(kf.split(dataset), start=1):
     print(f"\n[Fold {fold}/{KFOLDS}]")
     train_ds = Subset(dataset, train_idx)
-    val_ds   = Subset(dataset, val_idx)
+    val_ds = Subset(dataset, val_idx)
 
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False)
+    val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False)
 
     model = AstroNet(num_classes=NUM_CLASSES).to(device)
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
-    scheduler = OneCycleLR(optimizer, max_lr=1e-3, steps_per_epoch=len(train_loader), epochs=EPOCHS, pct_start=0.3, anneal_strategy='cos')
+    scheduler = OneCycleLR(optimizer, max_lr=1e-3, steps_per_epoch=len(train_loader),
+                           epochs=EPOCHS, pct_start=0.3, anneal_strategy='cos')
 
     best_val_f1 = 0.0
     patience_counter = 0
     train_acc_hist, val_acc_hist, val_f1_hist = [], [], []
 
-    for epoch in range(1, EPOCHS+1):
+    for epoch in range(1, EPOCHS + 1):
         model.train()
         correct = total = 0
         for images, labels in train_loader:
@@ -69,9 +71,9 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(dataset), start=1):
 
             preds = outputs.argmax(dim=1)
             correct += (preds == labels).sum().item()
-            total   += labels.size(0)
+            total += labels.size(0)
 
-        train_acc = correct/total
+        train_acc = correct / total
         train_acc_hist.append(train_acc)
 
         model.eval()
@@ -89,8 +91,8 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(dataset), start=1):
                 val_preds.extend(preds.cpu().tolist())
                 val_targets.extend(labels.cpu().tolist())
 
-        val_acc = val_correct/val_total
-        val_f1  = f1_score(val_targets, val_preds, average='macro')
+        val_acc = val_correct / val_total
+        val_f1 = f1_score(val_targets, val_preds, average='macro')
         val_acc_hist.append(val_acc)
         val_f1_hist.append(val_f1)
 
@@ -109,22 +111,36 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(dataset), start=1):
                 print(f"Early stopping at epoch {epoch}")
                 break
 
-    # Print out best model classification report
+    # Re-evaluate using the best saved model for this fold
+    print(f"\n[Re-evaluating best model for fold {fold}]")
+    best_model = AstroNet(num_classes=NUM_CLASSES).to(device)
+    best_model.load_state_dict(torch.load(model_path))
+    best_model.eval()
+
+    best_preds, best_targets = [], []
+    with torch.no_grad():
+        for images, labels in val_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = best_model(images)
+            preds = outputs.argmax(dim=1)
+            best_preds.extend(preds.cpu().tolist())
+            best_targets.extend(labels.cpu().tolist())
+
     print("\nClassification Report:")
-    print(classification_report(val_targets, val_preds, target_names=class_names, digits=4))
+    print(classification_report(best_targets, best_preds, target_names=class_names, digits=4))
     print("Confusion Matrix:")
-    print(confusion_matrix(val_targets, val_preds))
+    print(confusion_matrix(best_targets, best_preds))
 
     fold_results.append(pd.DataFrame({
-        'epoch': list(range(1, len(train_acc_hist)+1)),
+        'epoch': list(range(1, len(train_acc_hist) + 1)),
         f'train_acc_fold{fold}': train_acc_hist,
-        f'val_acc_fold{fold}':   val_acc_hist,
-        f'val_f1_fold{fold}':    val_f1_hist
+        f'val_acc_fold{fold}': val_acc_hist,
+        f'val_f1_fold{fold}': val_f1_hist
     }))
 
-# Save all stats for plotting 
+# Save all metrics to file for plotting later
 merged = fold_results[0]
 for df in fold_results[1:]:
     merged = merged.merge(df, on='epoch', how='outer')
 merged.to_csv(csv_path, index=False)
-print(f"\nSaved all folds’ metrics to {csv_path}")
+print(f"\nSaved all folds metrics to {csv_path}")
