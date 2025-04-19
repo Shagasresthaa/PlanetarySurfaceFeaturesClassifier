@@ -96,7 +96,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(dataset), start=1):
         val_acc_hist.append(val_acc)
         val_f1_hist.append(val_f1)
 
-        print(f"Epoch {epoch:02d}: Train Acc={train_acc:.4f} | Val Acc={val_acc:.4f} | Val F1={val_f1:.4f}")
+        print(f"Epoch {epoch:2d}: Train Acc={train_acc:.4f} | Val Acc={val_acc:.4f} | Val F1={val_f1:.4f}")
 
         # Early stop and save model if needed (PS dont torture the gpu or cpu anymore than it needs to lol)
         if val_f1 > best_val_f1:
@@ -112,7 +112,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(dataset), start=1):
                 break
 
     # Re-evaluate using the best saved model for this fold
-    print(f"\n[Re-evaluating best model for fold {fold}]")
+    print(f"\nEvaluating metrics best model for fold {fold}")
     best_model = AstroNet(num_classes=NUM_CLASSES).to(device)
     best_model.load_state_dict(torch.load(model_path))
     best_model.eval()
