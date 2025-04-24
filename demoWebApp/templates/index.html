@@ -15,11 +15,7 @@
     <h1 class="header">Planetary Surface Feature Classifier</h1>
 
     <div id="viewport">
-      <img
-        id="preview"
-        src="{{ url_for('static', filename='viewport_default.jpg') }}"
-        alt="Upload Preview"
-      />
+      <canvas id="canvas" width="512" height="512"></canvas>
     </div>
 
     <form id="uploadForm" enctype="multipart/form-data">
@@ -27,42 +23,119 @@
         Choose Image
         <input type="file" name="image" id="imageInput" accept="image/*" />
       </label>
-      <button type="submit" class="material-btn">Upload & Classify</button>
+      <div style="margin-top: 10px">
+        <button
+          type="button"
+          id="clearBtn"
+          class="material-btn"
+          style="background-color: #9e9e9e; margin-right: 10px"
+        >
+          Clear Selection
+        </button>
+        <button type="submit" class="material-btn">Classify Selection</button>
+      </div>
     </form>
 
-    <div id="toast"></div>
+    <div id="resultBox" class="hidden">
+      <p id="resultLabel"></p>
+      <p id="resultConfidence"></p>
+    </div>
 
     <script>
-      const form = document.getElementById("uploadForm");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
       const imageInput = document.getElementById("imageInput");
-      const preview = document.getElementById("preview");
-      const toast = document.getElementById("toast");
+      const form = document.getElementById("uploadForm");
+      const clearBtn = document.getElementById("clearBtn");
+      const resultBox = document.getElementById("resultBox");
+      const resultLabel = document.getElementById("resultLabel");
+      const resultConfidence = document.getElementById("resultConfidence");
+
+      let img = new Image();
+      let imageFile = null;
+      let startX, startY, endX, endY;
+      let drawing = false;
+      let selectionMade = false;
+
+      window.onload = () => {
+        img.src = "{{ url_for('static', filename='viewport_default.jpg') }}";
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        };
+      };
 
       imageInput.onchange = () => {
         const file = imageInput.files[0];
-        if (file) {
-          const objectURL = URL.createObjectURL(file);
-          preview.src = objectURL;
-          setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
-        } else {
-          preview.src =
-            "{{ url_for('static', filename='viewport_default.jpg') }}";
+        if (!file) return;
+        imageFile = file;
+        selectionMade = false;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          img.onload = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      };
+
+      canvas.onmousedown = (e) => {
+        if (!img.src) return;
+        drawing = true;
+        const rect = canvas.getBoundingClientRect();
+        startX = e.clientX - rect.left;
+        startY = e.clientY - rect.top;
+      };
+
+      canvas.onmouseup = (e) => {
+        if (!drawing) return;
+        const rect = canvas.getBoundingClientRect();
+        endX = e.clientX - rect.left;
+        endY = e.clientY - rect.top;
+        drawing = false;
+        selectionMade = true;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = "#ff0000";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(startX, startY, endX - startX, endY - startY);
+      };
+
+      clearBtn.onclick = () => {
+        selectionMade = false;
+        if (img.src) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         }
       };
 
       form.onsubmit = async (e) => {
         e.preventDefault();
-        const formData = new FormData(form);
+        if (!imageFile) {
+          alert("Upload an image before classifying.");
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("image", imageFile);
+
+        if (selectionMade) {
+          formData.append("x", Math.min(startX, endX));
+          formData.append("y", Math.min(startY, endY));
+          formData.append("width", Math.abs(endX - startX));
+          formData.append("height", Math.abs(endY - startY));
+        }
+
         const response = await fetch("/", {
           method: "POST",
           body: formData,
         });
+
         const result = await response.json();
-        toast.innerText = `Prediction: ${result.label} (${result.confidence}%)`;
-        toast.className = "show";
-        setTimeout(() => {
-          toast.className = toast.className.replace("show", "");
-        }, 3000);
+        resultLabel.textContent = "Prediction: " + result.label;
+        resultConfidence.textContent = "Confidence: " + result.confidence + "%";
+        resultBox.classList.remove("hidden");
       };
     </script>
   </body>

@@ -38,7 +38,22 @@ def index():
 
             try:
                 image = Image.open(filepath).convert("RGB")
-                input_tensor = transform(image).unsqueeze(0)
+
+                try:
+                    x = int(float(request.form["x"]))
+                    y = int(float(request.form["y"]))
+                    w = int(float(request.form["width"]))
+                    h = int(float(request.form["height"]))
+
+                    if w > 0 and h > 0:
+                        crop = image.crop((x, y, x + w, y + h))
+                    else:
+                        crop = image
+                except (KeyError, ValueError):
+                    crop = image
+
+                crop = crop.resize((224, 224))
+                input_tensor = transform(crop).unsqueeze(0)
 
                 with torch.no_grad():
                     output = model(input_tensor)
@@ -54,6 +69,7 @@ def index():
             finally:
                 if os.path.exists(filepath):
                     os.remove(filepath)
+
     return render_template("index.html")
 
 if __name__ == "__main__":
