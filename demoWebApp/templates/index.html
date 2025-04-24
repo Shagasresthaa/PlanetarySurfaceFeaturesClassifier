@@ -6,17 +6,28 @@
       rel="stylesheet"
       href="{{ url_for('static', filename='index.css') }}"
     />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
-    <h1>Planetary Surface Feature Classifier</h1>
+    <h1 class="header">Planetary Surface Feature Classifier</h1>
 
     <div id="viewport">
-      <img id="preview" src="" alt="Upload Preview" />
+      <img
+        id="preview"
+        src="{{ url_for('static', filename='viewport_default.jpg') }}"
+        alt="Upload Preview"
+      />
     </div>
 
     <form id="uploadForm" enctype="multipart/form-data">
-      <input type="file" name="image" id="imageInput" accept="image/*" />
-      <button type="submit">Upload</button>
+      <label class="upload-btn">
+        Choose Image
+        <input type="file" name="image" id="imageInput" accept="image/*" />
+      </label>
+      <button type="submit" class="material-btn">Upload & Classify</button>
     </form>
 
     <div id="toast"></div>
@@ -29,7 +40,14 @@
 
       imageInput.onchange = () => {
         const file = imageInput.files[0];
-        if (file) preview.src = URL.createObjectURL(file);
+        if (file) {
+          const objectURL = URL.createObjectURL(file);
+          preview.src = objectURL;
+          setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
+        } else {
+          preview.src =
+            "{{ url_for('static', filename='viewport_default.jpg') }}";
+        }
       };
 
       form.onsubmit = async (e) => {

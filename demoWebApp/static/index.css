@@ -1,22 +1,33 @@
 body {
-  text-align: center;
-  font-family: sans-serif;
-  background: #f3f3f3;
+  height: 100vh;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-family: "Roboto", sans-serif;
+  background: #d36906;
+  color: #333;
 }
 
-h1 {
-  margin-top: 20px;
+.header {
+  font-weight: 600;
+  font-size: 3rem;
+  margin-bottom: 2.5rem;
+  color: #000000;
 }
 
 #viewport {
-  margin: 20px auto;
-  width: 300px;
-  height: 300px;
+  width: 512px;
+  height: 512px;
   border: 2px dashed #bbb;
+  background: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: white;
+  margin-bottom: 15px;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 #preview {
@@ -24,29 +35,64 @@ h1 {
   max-height: 100%;
 }
 
-button {
-  margin-top: 10px;
-  padding: 10px 20px;
+form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.upload-btn {
+  display: inline-block;
+  background: #e0e0e0;
+  color: #333;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 16px;
+  border-radius: 4px;
   cursor: pointer;
+  margin-bottom: 10px;
+  transition: background 0.2s ease;
+}
+
+.upload-btn:hover {
+  background: #d5d5d5;
+}
+
+.upload-btn input {
+  display: none;
+}
+
+.material-btn {
+  background-color: #3f51b5;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  font-weight: bold;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.material-btn:hover {
+  background-color: #303f9f;
 }
 
 #toast {
   visibility: hidden;
-  background-color: #333;
+  background-color: #323232;
   color: #fff;
-  margin: auto;
-  padding: 10px;
+  padding: 12px 24px;
   position: fixed;
   bottom: 30px;
-  left: 0;
-  right: 0;
-  width: fit-content;
-  border-radius: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
 #toast.show {
   visibility: visible;
-  animation: fadein 0.5s, fadeout 0.5s 2.5s;
+  animation: fadein 0.3s, fadeout 0.3s 2.7s;
 }
 
 @keyframes fadein {

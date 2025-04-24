@@ -9,15 +9,18 @@ app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# Load model
+for f in os.listdir(UPLOAD_FOLDER):
+    try:
+        os.remove(os.path.join(UPLOAD_FOLDER, f))
+    except Exception:
+        pass
+
 model = AstroNet(num_classes=4)
 model.load_state_dict(torch.load("model/densetAstroNetFinalWeights.pth", map_location="cpu"))
 model.eval()
 
-# Classes
 class_names = ["bright_dune", "crater", "dark_dune", "impact_ejecta"]
 
-# Transform (same as training)
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -29,21 +32,28 @@ def index():
     if request.method == "POST":
         file = request.files["image"]
         if file:
-            filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
+            filename = file.filename
+            filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             file.save(filepath)
 
-            image = Image.open(filepath).convert("RGB")
-            input_tensor = transform(image).unsqueeze(0)
+            try:
+                image = Image.open(filepath).convert("RGB")
+                input_tensor = transform(image).unsqueeze(0)
 
-            with torch.no_grad():
-                output = model(input_tensor)
-                probs = torch.softmax(output, dim=1)
-                conf, pred = torch.max(probs, dim=1)
-                label = class_names[pred.item()]
-                confidence = conf.item()
+                with torch.no_grad():
+                    output = model(input_tensor)
+                    probs = torch.softmax(output, dim=1)
+                    conf, pred = torch.max(probs, dim=1)
+                    label = class_names[pred.item()]
+                    confidence = conf.item()
 
-            return jsonify({"label": label, "confidence": round(confidence * 100, 2)})
-
+                return jsonify({
+                    "label": label,
+                    "confidence": round(confidence * 100, 2)
+                })
+            finally:
+                if os.path.exists(filepath):
+                    os.remove(filepath)
     return render_template("index.html")
 
 if __name__ == "__main__":
