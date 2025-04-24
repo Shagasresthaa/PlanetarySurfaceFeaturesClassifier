@@ -177,3 +177,6 @@ cython_debug/
 data/
 *.jpg
 *.pth
+
+# Adding exception for final model 
+!20250418_200707_fold3.pth
