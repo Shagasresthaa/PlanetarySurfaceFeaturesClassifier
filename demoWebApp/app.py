@@ -9,11 +9,17 @@ app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
+# Cleanup
 for f in os.listdir(UPLOAD_FOLDER):
     try:
         os.remove(os.path.join(UPLOAD_FOLDER, f))
-    except Exception:
+    except:
         pass
+
+try:
+    os.remove("static/crop_preview.jpg")
+except:
+    pass
 
 model = AstroNet(num_classes=4)
 model.load_state_dict(torch.load("model/densetAstroNetFinalWeights.pth", map_location="cpu"))
@@ -62,9 +68,13 @@ def index():
                     label = class_names[pred.item()]
                     confidence = conf.item()
 
+                crop_path = "static/crop_preview.jpg"
+                crop.save(crop_path)
+
                 return jsonify({
                     "label": label,
-                    "confidence": round(confidence * 100, 2)
+                    "confidence": round(confidence * 100, 2),
+                    "crop_url": f"/static/crop_preview.jpg"
                 })
             finally:
                 if os.path.exists(filepath):

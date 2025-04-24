@@ -41,6 +41,23 @@
       <p id="resultConfidence"></p>
     </div>
 
+    <div id="debugPreview" class="hidden">
+      <p style="text-align: center; margin-top: 20px; font-weight: bold">
+        Model View
+      </p>
+      <img
+        id="cropPreview"
+        src=""
+        alt="Crop Preview"
+        style="
+          display: block;
+          margin: 0 auto;
+          max-width: 224px;
+          border: 2px solid #999;
+        "
+      />
+    </div>
+
     <script>
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
@@ -50,9 +67,13 @@
       const resultBox = document.getElementById("resultBox");
       const resultLabel = document.getElementById("resultLabel");
       const resultConfidence = document.getElementById("resultConfidence");
+      const debugPreview = document.getElementById("debugPreview");
+      const cropPreview = document.getElementById("cropPreview");
 
       let img = new Image();
       let imageFile = null;
+      let originalWidth = 0;
+      let originalHeight = 0;
       let startX, startY, endX, endY;
       let drawing = false;
       let selectionMade = false;
@@ -70,9 +91,14 @@
         if (!file) return;
         imageFile = file;
         selectionMade = false;
+        debugPreview.classList.add("hidden");
+        resultBox.classList.add("hidden");
+
         const reader = new FileReader();
         reader.onload = function (e) {
           img.onload = () => {
+            originalWidth = img.width;
+            originalHeight = img.height;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           };
@@ -104,10 +130,8 @@
 
       clearBtn.onclick = () => {
         selectionMade = false;
-        if (img.src) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       };
 
       form.onsubmit = async (e) => {
@@ -121,10 +145,18 @@
         formData.append("image", imageFile);
 
         if (selectionMade) {
-          formData.append("x", Math.min(startX, endX));
-          formData.append("y", Math.min(startY, endY));
-          formData.append("width", Math.abs(endX - startX));
-          formData.append("height", Math.abs(endY - startY));
+          const scaleX = originalWidth / canvas.width;
+          const scaleY = originalHeight / canvas.height;
+
+          const x = Math.min(startX, endX) * scaleX;
+          const y = Math.min(startY, endY) * scaleY;
+          const w = Math.abs(endX - startX) * scaleX;
+          const h = Math.abs(endY - startY) * scaleY;
+
+          formData.append("x", Math.round(x));
+          formData.append("y", Math.round(y));
+          formData.append("width", Math.round(w));
+          formData.append("height", Math.round(h));
         }
 
         const response = await fetch("/", {
@@ -136,6 +168,11 @@
         resultLabel.textContent = "Prediction: " + result.label;
         resultConfidence.textContent = "Confidence: " + result.confidence + "%";
         resultBox.classList.remove("hidden");
+
+        if (result.crop_url) {
+          cropPreview.src = result.crop_url + "?t=" + new Date().getTime();
+          debugPreview.classList.remove("hidden");
+        }
       };
     </script>
   </body>

@@ -24,11 +24,11 @@ class DenseLayer(nn.Module):
         new_features = self.conv1(self.relu1(self.norm1(x)))
         new_features = self.conv2(self.relu2(self.norm2(new_features)))
 
-        # optional dropout regularization
+        # dropout regularization
         if self.drop_rate > 0:
             new_features = F.dropout(new_features, p=self.drop_rate, training=self.training)
 
-        # concatenate input with new features -> DenseNet behavior
+        # concatenate input with new features
         return torch.cat([x, new_features], 1)
 
 
@@ -46,7 +46,7 @@ class DenseBlock(nn.Module):
         return self.block(x)
 
 
-# transition block: compresses features and downsamples
+# transition block compresses features and downsamples
 class Transition(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(Transition, self).__init__()
@@ -56,19 +56,17 @@ class Transition(nn.Module):
         self.pool = nn.AvgPool2d(kernel_size=2, stride=2)
 
     def forward(self, x):
-        # apply 1x1 conv -> downsample with avgpool
         x = self.conv(self.relu(self.norm(x)))
         return self.pool(x)
 
 
-# Final DenseNet classifier
+# DenseNet classifier
 class AstroNet(nn.Module):
     def __init__(self, num_classes=4, growth_rate=32, block_layers=(6, 12, 24, 16), drop_rate=0.1):
         super(AstroNet, self).__init__()
         self.growth_rate = growth_rate
         num_init_features = 64
 
-        # initial conv layer -> standard ResNet-style start
         self.conv0 = nn.Conv2d(3, num_init_features, kernel_size=7, stride=2, padding=3, bias=False)
         self.norm0 = nn.BatchNorm2d(num_init_features)
         self.relu0 = nn.ReLU(inplace=True)
@@ -82,12 +80,10 @@ class AstroNet(nn.Module):
             self.features.add_module(f'denseblock{i+1}', block)
             channels += num_layers * growth_rate
             if i != len(block_layers) - 1:
-                # add transition except after final block
                 trans = Transition(channels, channels // 2)
                 self.features.add_module(f'transition{i+1}', trans)
                 channels = channels // 2
 
-        # final BN -> global pool -> linear classifier
         self.final_bn = nn.BatchNorm2d(channels)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = nn.Linear(channels, num_classes)
